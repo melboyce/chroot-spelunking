@@ -23,7 +23,10 @@ The `Dockerfile` has the details.
 
 Once the installation has completed, execute the following:
 
-`cd`
+```
+docker run -it voidtoy
+cd
+```
 
 This will change the working directory to `/root`, the `root` user's home
 directory.
