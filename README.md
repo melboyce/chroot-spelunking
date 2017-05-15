@@ -19,21 +19,12 @@ then:
 This command will download a root filesystem and a few dependencies and
 build a Docker image that will be used in the workshop.
 
+*NOTE!* On at least one Mac, the above command fails. Try:
+
+`docker build . -t voidtoy`
+
 
 ## Environment
 
 The `Dockerfile` has the details of what the container will look like if
 that sort of thing interests you.
-
-
-## Before starting
-
-Once the installation has completed, execute the following:
-
-```
-docker run -it voidtoy
-cd
-```
-
-This will change the working directory to `/root`, the `root` user's home
-directory.
