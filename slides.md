@@ -52,7 +52,7 @@ mkdir rootfs
 cat <<! >foo.c
 #include <stdio.h>
 int main(void) {
-    printf("hello\\n");
+    printf("hello\n");
     return 0;
 }
 !
@@ -145,7 +145,7 @@ Exit back to your host: `Ctrl+D`
 <br>
 Exit the container; export the filesystem.
 
-`docker --export toy >toy.tar`
+`docker export toy >toy.tar`
 
 <br>
 `tar xpvf \!$ -C toyfs`
