@@ -31,7 +31,7 @@ to strengthen your nerd muscle.
 1998 - vmware
 2000 - jails, bsd
 2002 - namespaces, originally plan9 (80s-90s)
-2004 - zones, solaris
+2004 - zones, solaris containers
 2005 - seccomp
 2007 - cgroups, google
 2008 - lxc, ibm, google, et al
@@ -40,12 +40,26 @@ to strengthen your nerd muscle.
 
 ***
 
+# What Is Isolation?
+
+Protection rings are a low-level example
+<br>
+Chroot sandoboxes the filesystem for a process
+<br>
+Namespaces sandbox other parts of the OS
+
+◦°˚\(*❛‿❛)/˚°◦
+
+***
+
 # A Shitty Container - pt.1
 
-`docker run -it --security-opt seccomp:unconfined --name peppy voidtoy`
-`cd`
+~~~
+ssh <provided address>
+~~~
 
 <br>
+Let's write and compile a small C program:
 ~~~
 mkdir rootfs
 
@@ -56,40 +70,41 @@ int main(void) {
     return 0;
 }
 !
+gcc -o rootfs/foo foo.c
 ~~~
-
-<br>
-`gcc -o rootfs/foo foo.c`
 
 ***
 
 # A Shitty Container - pt.2
 
-`chroot rootfs /foo`
-
+Let's execute the program with an isolated filesystem:
+~~~
+chroot rootfs /foo
+~~~
 <br>
-Foiled! An error!
-
-<br>
-`ls -l rootfs/foo`
-
+Foiled! An error! Let's investigate:
+~~~
+ls -l rootfs/foo
+file !$
+size !$
+~~~
 <br>
 ( •᷄ὤ•᷅)？  なに?
+<br>
+Linked libraries!
+~~~
+ldd !$
+~~~
 
 <br>
-`file \!$`
-
-<br>
-`ldd \!$`
-
+~~~
+mkdir -p rootfs/{usr/lib,lib}
+cp /usr/lib/libc.so.6 rootfs/usr/lib
+cp /lib/ld-linux-x86-64.so.2 rootfs/lib
+!chroot
+~~~
 <br>
 ╭( ･ㅂ･)و  よし!
-
-<br>
-`mkdir -p rootfs/{usr/lib,lib}`
-`cp /usr/lib/libc.so.6 rootfs/usr/lib`
-`cp /lib/ld-linux-x86-64.so.2 rootfs/lib`
-`\!chroot`
 
 ***
 

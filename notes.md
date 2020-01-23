@@ -1,40 +1,35 @@
 # chroot spelunking
 
----
-ACHTUNG!
-There are sections of command-line usage that rely on history in order to
-explain some useful shell conveniences that some folk dn't know about.
-Don't muck around unless you aren't interested in following along with
-those sections.
----
+This workshop will go over some of the technology at play in so called
+"containers" on Linux.
 
-* Docker, rkt, lxc, et al are built on top of chroot and some other kernel features.
-* Understanding them is a good idea.
-* Chroots are not new and begat some improved implementations.
-* Over time, Linux has absorbed some functionality which allow for isolation.
-* Chroots and the associated isolation mechanisms which enable
-  "containerization" are facilitated by a number of these kernel features.
+Resource isolation on Linux is achieved via a number of sub-systems which
+were added to the kernel over the years. All current "containerization tools"
+utilize some or all of these technologies.
 
-## Introduction
-
-*What will you get out of this?*
-
-### Linux/Unix Fundamentals
-
-Efficient use of the shell and a better understanding of a Linux environment
-should come in handy.
-
-### Debugging Skills
-
-Improving your knowledge of the underlying mechanics of containers will
-increase your ability to diagnose problems.
-
-### Tuning Skills
-
-Tuning is not limited to performance; consider security and isolation tuning.
+Understanding how `chroot` and its various friends work on a mechanical level
+will help clarify how Docker and its ilk function.
 
 
-## Pay Your Respects
+# Workshop Environment
+
+The workshop environment is a Void Linux system with sufficient tools
+installed to isolate a process. Refer to the included `MANIFEST` document
+if you build your own environment.
+
+
+# The Goal
+
+Docker is not magic. Nor are `rkt` or `lxc`. They are simply a set of userspace
+tools designed to make light work of a series of *just annoying enough*
+steps to warrant spending vast amounts of time automating and abstracting.
+
+The goal is not to poo-poo the aforementioned tools, but rather to appreciate
+what they're doing for you behind the scenes. A greater understanding of
+some kernel mechanics doesn't hurt either.
+
+
+# Pay Your Respects
 
 1979 - chroot, unix r7
 1994 - bochs
@@ -48,7 +43,7 @@ Tuning is not limited to performance; consider security and isolation tuning.
 2012 - (approx) seccomp-bpf, google (will drewry)
 2013 - docker, dotCloud (solomon hykes)
 
-### chroot
+## chroot
 
 Nearly 40 years old - let that sink in.
 
@@ -72,7 +67,7 @@ tools were released:
 This release was a real head-turner and apparently many old timers really
 liked it a lot.
 
-### namespaces
+## namespaces
 
 Plan 9 from Bell Labs:
 
@@ -92,13 +87,50 @@ Plan 9 from Bell Labs:
 * as you will discover, linux namespaces are quite rudimentary by comparison.
 
 
-## A Shitty Container
+# What Is Isolation?
 
-Let's spin up a Docker container to play within:
+Starting with `chroot`, let's define what *resource isolation* means in
+terms of a Linux process.
 
-`docker run -it --security-opt seccomp:unconfined --name peppy voidtoy`
-`cd`
 
+## Protection Rings
+
+The simplest, coarsest, and oldest form of isolation is in play
+at the kernel level (yes, I am excluding other hardware technologies
+intentionally). Protection rings separate userland from the kernel and were
+introduced with Multics. Protection rings can be implemented in hardware or
+software (the first version was soft); Linux uses *supervisor mode*.
+
+Supervisor mode is a hardware flag that, when set, allows the running process
+access to privileged instructions; modifying registers or some such. This
+flag implements two rings and userland processes on Linux use the kernel's
+*syscall* interface to utilize it.
+
+
+## Chroot
+
+Chroot changes the root filesystem that a process can read from or write to
+and was originally implemented to aid in operating system builds. It remains
+in heavy use for the same reason today.
+
+
+## Namespaces
+
+The concept of namespacing resources or processes is not new or peculiar to
+Unix-based operating systems. In the context of this workshop, namespaces
+refer to restricting the view that a process has of various exposed parts
+of the host - global resources. Changes to the namespaced global resources
+is visible to processes that are members of the namespace, but not others.
+
+
+# A Shitty Container - 1
+
+Let's SSH to your Linux instance:
+
+`ssh ...`
+
+Now we'll write a trivial program and create a directory for it to use as a
+root filesystem.
 ```
 mkdir rootfs
 
@@ -109,27 +141,21 @@ int main(void) {
     return 0;
 }
 !
-
 gcc -o rootfs/foo foo.c
 ```
 
-1. make the rootfs
-2. write a small c program to test with
-3. explain heredocs
-4. compile the program
 
-### heredocs (sidebar)
-A heredoc starts with the following token: `<<WORD`.
-Everything from that point on is escaped fully until `WORD` is entered on
-its own line.
+# A Shitty Container - 2
 
-The `cat` command recieves the content of the heredoc on `stdin`,
-echoes it to `stdout` which has been redirected to a file: `foo.c`.
+When executing `chroot`, the first argument we usually use is the directory
+that contains the new root filesystem. The second is the name of the program
+to execute with the new root.
 
-There was a time when editors were unavailable or not required.
+Let's execute this program with an isolated filesystem:
 
-
-## Back to The Shitty Container
+```
+sudo chroot rootfs /foo
+```
 
 Foiled! An error!
 
@@ -146,62 +172,52 @@ Inspect the file to see what kind of binary it is:
 
 ELF, dynamically linked. Aha!
 
-Get the linked SOs for the program:
-`ldd rootfs/foo`
 
-When the C program was compiled, it needed to be linked to libc and the
-program interpreter.  As the chroot doesn't have those files (it only has
-the executable in the rootdir), execution fails.
+## Dynamically Linked Binaries
 
-Let's copy them into the rootfs and try again.
-Explain the brackets. ;)
+Without getting into the hairy details, dynamically linked binaries are common
+on Linux and the first extrinsic dependency for a program of this nature is the
+Linux Loader. The loader locates and loads dependent libraries for the program.
+
+
+# Back To The Container
+
+Let's find out what libraries are required by the program:
 
 ```
-mkdir -p rootfs/{usr/lib,lib}
+ldd rootfs/foo
+```
+
+We can see that `libc` and the loader are required to execute the program; copy
+those files to the correct location in `rootfs/` and try again:
+
+```
+mkdir -p rootfs/{usr,}/lib
 cp /usr/lib/libc.so.6 rootfs/usr/lib
 cp /lib/ld-linux-x86-64.so.2 rootfs/lib
-!chroot
+!sudo
 ```
 
-### chroot command
 
-The first argument is a directory and the second is a process - the process
-which will be "chrooted". When the process starts, its view of the filesystem
-will be recuded to the contents of the directory specified. This is foretold
-by the program argument itself: `/foo`.
+# A Look Under The Covers
 
-This is the foundation of a "Linux container".
-
-
-## Bash history expansion (sidebar)
-
-`!word` executes the most recent program which starts with *word*.
-
-`!!` will be replaced in-place by the entirety of the previous command.
-
-`!*` evaluates to all arguments of the previous command
-
-`!$` evaluates to the last argument of the previous command.
-
-`Ctrl+A` and `Ctrl+E` move the cursor to the beginning and end of the current
-line repsectively.
-
-`Ctrl+U` *kills* the current line.
-
-
-## Let's Break It Down
-
-### basic tracing with strace
+Let's use `strace` to take a look at the syscalls used by our trivial program
+and then `strace` the chroot version to see how it differs.
 
 `strace` is violent - is pauses the target process before every syscall is passed
 across the ring and prints the syscall out with some useful context.
 
 While `strace` is handy, it's out-dated, unusable in production, and has
-already been replaced. AFAIK the transition is happening at the moment.
+already been replaced.
 
 Brendan Gregg is the dude to check out for the state of the art.
 
-### strace rootfs/foo
+
+## Trace the Program
+
+```
+strace rootfs/foo
+```
 
 Not all of the lines are important, but all tell you something about how
 a process intereacts with the kernel (and thus, the underlying hardware or
@@ -239,7 +255,12 @@ gets up to when it is converted into a process.
 
 The value on the right of the equals sign is useful. Sometimes.
 
-### sudo strace chroot rootfs /foo
+
+## Trace the Chroot Version
+
+```
+sudo strace chroot rootfs /foo
+```
 
 Now we can see that the first `execve()` syscall is for `chroot`.
 
@@ -256,65 +277,79 @@ Now you should have a working understanding of chroot:
 * A program is executed with a modified view of the root filesystem.
 
 
-## A Toy Chroot
+# A Toy Chroot
 
-Let's use Docker to create a rootfs with some useful tools.
+Let's use Docker to create a rootfs with some useful tools. We'll use this
+to greater explore life on the inside.
 
-`docker run -it voidlinux/voidlinux --name toy /usr/bin/bash`
+```
+docker run -it --name toy voidlinux/voidlinux /usr/bin/bash
+```
 
 Exit the container and export its filesystem:
 
-`docker export toy >toy.tar`
-
-Windows users may need to use the `--output` flag.
+```
+<C-d>  # or exit
+docker export toy >toy.tar
+```
 
 Unpack the rootfs into a directory:
 
-`tar xpvf toy.tar -C toyfs/`
-
-As the directory doesn't exist, `tar` will error; create the directory:
-
-`mkdir !$`
-
-Execute the tar command again:
-
-`!tar` or `!-2`
-
-Run a new environment with the rootfs mapped in:
-
-`docker run -it --security-opt seccomp:unconfined --cap-add=SYS_ADMIN --name peppytoy -v $PWD/toyfs:/root/toyfs voidtoy`
+```
+mkdir toyfs
+tar xpvf toy.tar -C toyfs
+```
 
 
-## Environment Variables
+# Environment Variables
 
 As we saw during the `strace` section, environment variables from the host are
 automatically provided to a process via the `exec()` family of function calls.
 
-`chroot toyfs /bin/env`
+```
+sudo chroot toyfs /bin/env
+```
 
 This shows the environment in the chroot. It is the same as the environment
-out of the chroot.
+out of the chroot. Or is it? Nerd points awarded for those that recognize why
+it may differ.
 
 The `env` program is used to execute a program with a modified environment.
 
-`env -i FOO=BAR chroot toyfs /bin/env`
+```
+sudo env -i FOO=BAR chroot toyfs /bin/env
+```
 
-The `-i` flag wipes the environ that is passed to the next command.
-KEY=VALUE pairs specify a custom environment.
+The `-i` flag wipes the environ that is passed to the command it executes.
+KEY=VALUE pairs specify a custom environment. As you can see, the entire
+environ for the *chrooted* program is replaced.
 
 
-## Namespaces
+# Namespaces
 
-There are 7 namespaces in Linux and they are opt-out.
+There are 7 namespaces in Linux and they are opt-out. This table is lifted
+directly from `man 7 namespaces`:
 
-* IPC (i)
-* mount (m)
-* network (n)
-* PID (p)
-* UTS (u)
-* user (U)
-* cgroup (c)
+|Namespace|Isolates|
+|:---|:---|
+Cgroup|Cgroup root directory
+IPC|System V IPC, POSIX message queues
+Network|Network devices, stacks, ports, etc.
+Mount|Mount points
+PID|Process IDs
+User|User and group IDs
+UTS|Hostname and NIS domain name
 
+
+## The Namespace API
+
+Namespaces can be accessed in two ways: syscalls or `/proc`. The `/proc`
+interface is rooted at `/prod/[pid]/ns/` and contains one entry for each
+namespace that supports manipulation via the syscall `setns(2)`.
+
+```bash
+ls -la /proc/$$/ns
+```
 
 ## Namespaces: unshare
 
